@@ -41,17 +41,72 @@ def get_products(
 
     # Build the base query
     query = """
-        SELECT *
+        SELECT products.id, products.name, image_link, beschrijving, brands.name AS Merk, price 
         FROM products
+        INNER JOIN brands ON products.brand_id = brands.id
     """
     query_params = []
+    
+    # Add JOIN JOIN to query before filtering to ensure each product-color combination results in a line (e.q. multiple lines per product)
+    query = query + """
+        LEFT JOIN product_color ON products.id = product_color.product_id
+        LEFT JOIN colors ON product_color.color_id = colors.id
+    """
+
+    # add WHERE to query if applicable
+    if len(brand_filter_values) > 0  or len(color_filter_values) > 0:
+        query = query +  " WHERE "
+
+    # add BRANDS IN to query if applicable
+    if len(brand_filter_values) > 0:
+        query = query +  "brands.name IN ( ?"
+        query_params.append(brand_filter_values[0])
+        for i in range(1, len(brand_filter_values)):
+            query = query +  ",?"
+            query_params.append(brand_filter_values[i])
+        query = query +  ")"
+
+    # add AND to query if applicable
+    if len(brand_filter_values) > 0  and len(color_filter_values) > 0:
+        query = query +  " AND "
+
+    # add COLORs IN to query if applicable
+    if len(color_filter_values) > 0:
+        query = query +  "colors.name IN ( ?"
+        query_params.append(color_filter_values[0])
+        for i in range(1, len(color_filter_values)):
+            query = query +  ",?"
+            query_params.append(color_filter_values[i])
+        query = query +  ")"
+
+    # Add GROUP BY to query after filter to remove duplicate products (e.q. one line per product)
+    query = query + " GROUP BY products.id"
 
     # Execute the query
     print("API: Query submitted:", query)
     print("API: Query parameters:", query_params)
     product_rows = db_connection.execute(query, query_params).fetchall()
     print("API: Query result (first 3 rows):", product_rows[:3])
-
+    
+    # Add values for n:m property (e.g., colors) to products
+    for product in product_rows:
+        # Fetch colors for the product
+        color_query = """
+            SELECT colors.name
+            FROM colors
+            JOIN product_color ON colors.id = product_color.color_id
+            WHERE product_color.product_id = ?
+        """
+        color_query_params= [product["id"]] # what comes at the place of the questionmark in the query
+        # Execute the query to fetch colors for the current product
+        color_rows = db_connection.execute(color_query, color_query_params).fetchall()
+        
+        # Add fetched colors to product
+        colors = []
+        for row in color_rows:
+            colors.append(row["name"])
+        product["kleur"] = colors
+        
     # Return result
     db_connection.close()
     print("API: Finished /api/products endpoint") 
@@ -64,9 +119,21 @@ def get_filters():
     print("API: Starting /api/filters endpoint")  
     db_connection = sqlite3.connect("data/products.db")
     db_connection.row_factory = dict_factory  # Convert each row into a dictionary
+    
+    # Fetch all distinct brands
+    brands_query = "SELECT name FROM brands"
+    brands_result = db_connection.execute(brands_query).fetchall()
+    brands = [row["name"] for row in brands_result]
+
+    # Fetch all distinct colors
+    colors_query = "SELECT name FROM colors"
+    colors_result = db_connection.execute(colors_query).fetchall()
+    colors = [row["name"] for row in colors_result]
 
     # Construct the response
     filters = {
+        "merk": brands,
+        "kleur": colors
     }
 
     # Return result

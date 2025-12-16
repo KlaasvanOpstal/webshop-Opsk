@@ -22,7 +22,7 @@
  */
 #header-section, #footer-section {
   text-align: center;
-  background: #1db3f8;
+  background: rgb(0, 238, 255);
   color: white;
   padding: 20px;
   margin: 20px;
